@@ -6,6 +6,10 @@ import com.timeseries.db.core.DataPoint;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 @RestController
@@ -40,16 +44,39 @@ public class TimeSeriesController {
      * 批量写入数据点
      * POST /api/v1/timeseries/batch-write
      */
+    /**
+     * 批量写入数据点 - 修复版本
+     */
     @PostMapping("/batch-write")
     public ApiResponse batchWrite(@RequestBody BatchWriteRequest request) {
         try {
-            timeSeriesDB.writeDataPointBatch(
-                    request.getSeries(),
-                    request.getPoints()
-            );
+            if (request.getSeries() == null || request.getSeries().trim().isEmpty()) {
+                return ApiResponse.error("Series name cannot be empty");
+            }
+
+            if (request.getPoints() == null || request.getPoints().isEmpty()) {
+                return ApiResponse.error("Points list cannot be empty");
+            }
+
+            // 转换请求中的点（如果需要）
+            List<DataPoint> points = request.getPoints();
+
+            // 验证和清理数据
+            List<DataPoint> validPoints = new ArrayList<>();
+            for (DataPoint point : points) {
+                if (point != null) {
+                    // 确保标签不为null
+                    if (point.getTags() == null) {
+                        point = new DataPoint(point.getTimestamp(), point.getValue(), new HashMap<>());
+                    }
+                    validPoints.add(point);
+                }
+            }
+
+            timeSeriesDB.writeDataPointBatch(request.getSeries(), validPoints);
+
             return ApiResponse.success(
-                    String.format("Batch write completed: %d points written",
-                            request.getPoints().size())
+                    String.format("Batch write completed: %d points written", validPoints.size())
             );
         } catch (Exception e) {
             return ApiResponse.error("Failed to batch write: " + e.getMessage());
@@ -252,6 +279,58 @@ public class TimeSeriesController {
             return ApiResponse.success("Cleanup completed");
         } catch (Exception e) {
             return ApiResponse.error("Failed to cleanup: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 诊断API - 检查数据文件
+     * GET /api/v1/timeseries/debug/{series}
+     */
+    @GetMapping("/debug/{series}")
+    public ApiResponse debugSeries(@PathVariable String series) {
+        try {
+            Map<String, Object> debugInfo = new HashMap<>();
+
+            // 获取元数据
+            Map<String, Object> meta = timeSeriesDB.getSeriesStats(series);
+            debugInfo.put("metadata", meta);
+
+            // 检查物理文件
+            Path dataDir = Paths.get(".\\data\\tsdb\\data");
+            Path indexDir = Paths.get(".\\data\\tsdb\\index");
+
+            if (Files.exists(dataDir)) {
+                List<Map<String, Object>> dataFiles = new ArrayList<>();
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(dataDir,
+                        path -> path.getFileName().toString().startsWith(series + "_"))) {
+                    for (Path path : stream) {
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("name", path.getFileName().toString());
+                        fileInfo.put("size", Files.size(path));
+                        fileInfo.put("lastModified", Files.getLastModifiedTime(path).toMillis());
+                        dataFiles.add(fileInfo);
+                    }
+                }
+                debugInfo.put("dataFiles", dataFiles);
+            }
+
+            if (Files.exists(indexDir)) {
+                List<Map<String, Object>> indexFiles = new ArrayList<>();
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(indexDir,
+                        path -> path.getFileName().toString().startsWith(series + "_"))) {
+                    for (Path path : stream) {
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("name", path.getFileName().toString());
+                        fileInfo.put("size", Files.size(path));
+                        indexFiles.add(fileInfo);
+                    }
+                }
+                debugInfo.put("indexFiles", indexFiles);
+            }
+
+            return ApiResponse.success(debugInfo);
+        } catch (Exception e) {
+            return ApiResponse.error("Debug failed: " + e.getMessage());
         }
     }
 }

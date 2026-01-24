@@ -1,6 +1,10 @@
 // storage/IndexFile.java - 索引文件
 package com.timeseries.db.storage;
 
+import com.timeseries.db.core.TimeSeriesDB;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -8,6 +12,8 @@ import java.nio.file.Paths;
 import java.util.*;
 
 public class IndexFile {
+    private static final Logger logger = LoggerFactory.getLogger(IndexFile.class);
+
     private final String filePath;
     private RandomAccessFile file;
     private FileChannel channel;
@@ -47,9 +53,20 @@ public class IndexFile {
         long fileSize = channel.size();
         int entryCount = (int) (fileSize / INDEX_ENTRY_SIZE);
 
+        logger.debug("Index file size: {}, entry count: {}", fileSize, entryCount);
+
+        if (entryCount <= 0) {
+            logger.warn("Index file has no entries: {}", filePath);
+            return results;
+        }
+
         // 二分查找开始位置
         int startIndex = binarySearch(startTime, 0, entryCount - 1);
-        if (startIndex < 0) return results;
+        logger.debug("Binary search result: startIndex={}", startIndex);
+
+        if (startIndex < 0 || startIndex >= entryCount) {
+            return results;
+        }
 
         // 线性扫描直到结束时间
         ByteBuffer buffer = ByteBuffer.allocate(INDEX_ENTRY_SIZE);
@@ -58,17 +75,26 @@ public class IndexFile {
             buffer.flip();
 
             long timestamp = buffer.getLong();
-            if (timestamp > endTime) break;
+            long offset = buffer.getLong();
+            int length = buffer.getInt();
+
+            logger.debug("Index entry {}: timestamp={}({}), offset={}, length={}",
+                    i, timestamp, new Date(timestamp), offset, length);
+
+            if (timestamp > endTime) {
+                logger.debug("Timestamp {} > endTime {}, breaking loop", timestamp, endTime);
+                break;
+            }
 
             if (timestamp >= startTime) {
-                long offset = buffer.getLong();
-                int length = buffer.getInt();
                 results.add(new IndexEntry(timestamp, offset, length));
+                logger.debug("Added index entry: timestamp={}", timestamp);
             }
 
             buffer.clear();
         }
 
+        logger.info("Found {} index entries in range", results.size());
         return results;
     }
 

@@ -319,29 +319,40 @@ public class DataFile {
         return results;
     }
 
-    /**
-     * 根据索引文件读取数据点
-     */
     public List<byte[]> readDataPointsByIndex(List<IndexFile.IndexEntry> indexEntries) throws IOException {
         List<byte[]> results = new ArrayList<>();
 
         if (indexEntries == null || indexEntries.isEmpty()) {
+            logger.warn("No index entries provided");
             return results;
         }
+
+        logger.info("Reading {} data points by index", indexEntries.size());
 
         // 按文件偏移量排序，提高磁盘读取效率
         List<IndexFile.IndexEntry> sortedEntries = new ArrayList<>(indexEntries);
         sortedEntries.sort(Comparator.comparingLong(e -> e.fileOffset));
 
-        for (IndexFile.IndexEntry entry : sortedEntries) {
+        for (int i = 0; i < sortedEntries.size(); i++) {
+            IndexFile.IndexEntry entry = sortedEntries.get(i);
             try {
-                byte[] data = readData(entry.fileOffset, (int)entry.dataLength, false); // 假设索引中已标记压缩状态
-                results.add(data);
+                logger.debug("Reading entry {}: offset={}, length={}",
+                        i, entry.fileOffset, entry.dataLength);
+
+                byte[] data = readData(entry.fileOffset, entry.dataLength, false);
+
+                if (data != null) {
+                    results.add(data);
+                    logger.debug("Successfully read data for entry {}, size={}", i, data.length);
+                } else {
+                    logger.warn("Failed to read data for entry {}", i);
+                }
             } catch (IOException e) {
-                logger.warn("Failed to read data at offset {}: {}", entry.fileOffset, e.getMessage());
+                logger.error("Error reading data at offset {}: {}", entry.fileOffset, e.getMessage(), e);
             }
         }
 
+        logger.info("Successfully read {} data points", results.size());
         return results;
     }
 

@@ -578,6 +578,11 @@ public class TimeSeries {
         try (RandomAccessFile idxFile = new RandomAccessFile(indexPath, "rw");
              FileChannel idxChannel = idxFile.getChannel()) {
 
+            // 首先确保文件是新的（清空现有内容）
+            idxChannel.truncate(0);
+
+            logger.info("Creating index file: {} with {} entries", indexPath, timestamps.size());
+
             // 使用更大的缓冲区提高性能
             int bufferSize = Math.min(8 * 1024 * 1024, timestamps.size() * 20 + 100);
             ByteBuffer idxBuffer = ByteBuffer.allocate(bufferSize);
@@ -590,19 +595,38 @@ public class TimeSeries {
             idxBuffer.putInt(timestamps.size());
 
             // 写入每个时间戳和对应的文件偏移量
-            // 注意：这里简化了偏移量计算，实际应该记录每个数据点的精确偏移
-            long baseOffset = 64; // 文件头大小
+            // 注意：这里需要准确计算偏移量
+            long currentOffset = 64; // 文件头大小
+
             for (Long ts : timestamps) {
                 idxBuffer.putLong(ts);
-                idxBuffer.putLong(baseOffset);
-                // 估算每个数据点的偏移量（时间戳8 + 长度4 + 数据长度）
-                baseOffset += 12 + estimateDataPointSize();
+                idxBuffer.putLong(currentOffset);
+                // 数据点大小：时间戳(8) + 长度(4) + 数据（估算）
+                // 这里需要从实际数据中获取准确大小
+                DataPoint point = inMemoryPoints.get(ts);
+                if (point != null) {
+                    byte[] serialized = serializeDataPoint(point);
+                    idxBuffer.putInt(serialized.length);
+                    currentOffset += 8 + 4 + serialized.length; // 时间戳+长度+数据
+                } else {
+                    // 如果找不到数据点，使用估算大小
+                    idxBuffer.putInt(estimateDataPointSize());
+                    currentOffset += 8 + 4 + estimateDataPointSize();
+                }
             }
 
             idxBuffer.flip();
             idxChannel.write(idxBuffer);
 
-            logger.debug("Created index file: {} ({} entries)", indexPath, timestamps.size());
+            // 强制刷写到磁盘
+            idxChannel.force(true);
+
+            logger.info("Created index file: {} ({} entries, size={} bytes)",
+                    indexPath, timestamps.size(), idxChannel.size());
+
+        } catch (Exception e) {
+            logger.error("Failed to create index file: {}", indexPath, e);
+            throw e;
         }
     }
 

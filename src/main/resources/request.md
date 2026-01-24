@@ -56,3 +56,9 @@ curl -X GET "http://localhost:8080/tsdb/api/v1/timeseries/stats/cpu_usage"
 
 # 9. 获取数据库统计
 curl -X GET "http://localhost:8080/tsdb/api/v1/timeseries/db-stats"
+
+
+
+http://localhost:8080/tsdb/api/v1/timeseries/query?series=aaaaaa&startTime=0&endTime=1677677800000
+http://localhost:8080/tsdb/api/v1/timeseries/debug/aaaaaa
+http://localhost:8080/tsdb/api/v1/timeseries/stats/aaaaaa

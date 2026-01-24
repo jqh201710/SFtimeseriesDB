@@ -283,22 +283,45 @@ public class TimeSeriesDB {
         return allResults;
     }
 
+    // 在 TimeSeriesDB.java 中添加调试日志
     private List<DataPoint> queryFromDisk(String series, long startTime, long endTime,
                                           Map<String, String> tagFilters) {
         List<DataPoint> results = new ArrayList<>();
 
         try {
+            logger.info("Querying from disk: series={}, startTime={}, endTime={}",
+                    series, startTime, endTime);
+
             // 获取序列元数据
             MetaFile.SeriesMeta seriesMeta = metaFile.getSeriesMeta(series);
             if (seriesMeta == null) {
+                logger.info("No metadata found for series: {}", series);
                 return results;
+            }
+
+            logger.info("Series metadata found: dataFiles={}", seriesMeta.getDataFiles().size());
+
+            // 详细打印每个数据文件的信息
+            for (MetaFile.DataFileInfo fileInfo : seriesMeta.getDataFiles()) {
+                logger.info("DataFile: name={}, startTime={}({}), endTime={}({}), points={}",
+                        fileInfo.getFileName(),
+                        fileInfo.getStartTime(), new Date(fileInfo.getStartTime()),
+                        fileInfo.getEndTime(), new Date(fileInfo.getEndTime()),
+                        fileInfo.getPointCount());
             }
 
             // 查询所有相关的数据文件
             List<MetaFile.DataFileInfo> relevantFiles = seriesMeta.getDataFiles().stream()
-                    .filter(file -> !(endTime < file.getStartTime() || startTime > file.getEndTime()))
+                    .filter(file -> {
+                        boolean relevant = !(endTime < file.getStartTime() || startTime > file.getEndTime());
+                        logger.debug("File {}: startTime={}, endTime={}, relevant={}",
+                                file.getFileName(), file.getStartTime(), file.getEndTime(), relevant);
+                        return relevant;
+                    })
                     .sorted(Comparator.comparingLong(MetaFile.DataFileInfo::getStartTime))
                     .collect(Collectors.toList());
+
+            logger.info("Found {} relevant files for query", relevantFiles.size());
 
             // 并行查询多个文件
             List<Future<List<DataPoint>>> futures = new ArrayList<>();
@@ -310,11 +333,15 @@ public class TimeSeriesDB {
             // 收集结果
             for (Future<List<DataPoint>> future : futures) {
                 try {
-                    results.addAll(future.get(10, TimeUnit.SECONDS)); // 10秒超时
+                    List<DataPoint> fileResults = future.get(10, TimeUnit.SECONDS);
+                    logger.info("Read {} points from a file", fileResults.size());
+                    results.addAll(fileResults);
                 } catch (Exception e) {
                     logger.warn("Error reading data file", e);
                 }
             }
+
+            logger.info("Total points found from disk: {}", results.size());
 
         } catch (Exception e) {
             logger.error("Error querying from disk for series: {}", series, e);
@@ -983,4 +1010,5 @@ public class TimeSeriesDB {
             globalLock.writeLock().unlock();
         }
     }
+
 }
