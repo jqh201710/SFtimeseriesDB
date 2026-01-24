@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="60 seconds">
+    <!-- 基础配置：日志格式 + 字符编码 -->
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"/>
+    <property name="CHARSET" value="UTF-8"/>
+    <!-- 日志文件存储路径（与时序库数据分离） -->
+    <property name="LOG_DIR" value="./timeseries-logs"/>
+
+    <!-- 1. 控制台输出 Appender -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>${CHARSET}</charset>
+        </encoder>
+        <!-- 控制台只输出INFO及以上级别日志（减少冗余） -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+    </appender>
+
+    <!-- 2. 文件输出 Appender（修复滚动策略，兼容所有版本） -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!-- 日志文件路径 -->
+        <file>${LOG_DIR}/timeseries-db.log</file>
+        <!-- 滚动策略：官方推荐的 SizeAndTimeBasedRollingPolicy（替代废弃类） -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 文件名模板：新增 %i 整数令牌，解决核心报错 -->
+            <fileNamePattern>${LOG_DIR}/timeseries-db.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 保留7天日志 -->
+            <maxHistory>7</maxHistory>
+            <!-- 单文件最大100MB -->
+            <maxFileSize>100MB</maxFileSize>
+            <!-- 总日志大小上限（可选，防止磁盘占满） -->
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>${CHARSET}</charset>
+        </encoder>
+        <!-- 文件输出DEBUG及以上级别（便于排查问题） -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+    </appender>
+
+    <!-- 根日志配置：同时输出到控制台+文件 -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- 自定义包日志级别：时序库核心包输出DEBUG，便于调试 -->
+    <logger name="com.timeseries.db" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </logger>
+
+    <!-- 关闭SpringBoot无关日志的冗余输出 -->
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="com.fasterxml.jackson" level="WARN"/>
+</configuration>

@@ -1,0 +1,16 @@
+# application.yml
+spring:
+  application:
+    name: timeseries-db
+
+timeseries:
+  storage:
+    base-path: ./timeseries-data  # 本地存储根路径
+    shard-type: HOUR              # 分片类型：HOUR/DAY（按小时/天切分文件）
+    cache:
+      max-size: 10000             # 内存缓存最大数据点数（控制内存占用）
+      expire-minutes: 10          # 缓存过期时间
+    async:
+      core-pool-size: 4
+      max-pool-size: 8
+      queue-capacity: 1000

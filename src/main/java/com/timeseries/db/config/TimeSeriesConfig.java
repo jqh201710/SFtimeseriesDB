@@ -1,74 +1,35 @@
+// com.timeseries.db.config.TimeSeriesConfig.java
 package com.timeseries.db.config;
 
-// TimeSeriesConfig.java - 配置类
-
-import com.timeseries.db.core.TimeSeriesDB;
 import lombok.Data;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
-import javax.annotation.PreDestroy;
-import java.util.Map;
-
-@Configuration
+@Data
+@Component
+@ConfigurationProperties(prefix = "timeseries.storage")
 public class TimeSeriesConfig {
+    /** 存储根路径 */
+    private String basePath = "./timeseries-data";
+    /** 分片类型：HOUR/DAY */
+    private String shardType = "HOUR";
+    /** 缓存配置 */
+    private CacheConfig cache = new CacheConfig();
+    /** 异步线程池配置 */
+    private AsyncConfig async = new AsyncConfig();
 
-    @Value("${timeseries.data-dir:./data/tsdb}")
-    private String dataDir;
-
-    @Value("${timeseries.max-cache-size:10000}")
-    private int maxCacheSize;
-
-    @Value("${timeseries.enable-compression:true}")
-    private boolean enableCompression;
-
-    private TimeSeriesDB timeSeriesDB;
-
-    @Bean
-    public TimeSeriesDB timeSeriesDB() {
-        timeSeriesDB = new TimeSeriesDB(dataDir, maxCacheSize, enableCompression);
-        return timeSeriesDB;
+    @Data
+    public static class CacheConfig {
+        /** 缓存最大数据点数 */
+        private int maxSize = 10000;
+        /** 缓存过期分钟数 */
+        private int expireMinutes = 10;
     }
 
-    @PreDestroy
-    public void cleanup() {
-        if (timeSeriesDB != null) {
-            timeSeriesDB.close();
-        }
+    @Data
+    public static class AsyncConfig {
+        private int corePoolSize = 4;
+        private int maxPoolSize = 8;
+        private int queueCapacity = 1000;
     }
-}
-
-// 请求响应类
-@Data
-class WriteRequest {
-    private String series;
-    private long timestamp;
-    private double value;
-    private Map<String, String> tags;
-
-    // getters and setters
-}
-
-@Data
-class ApiResponse {
-    private boolean success;
-    private String message;
-    private Object data;
-
-    public static ApiResponse success(Object data) {
-        ApiResponse response = new ApiResponse();
-        response.setSuccess(true);
-        response.setData(data);
-        return response;
-    }
-
-    public static ApiResponse error(String message) {
-        ApiResponse response = new ApiResponse();
-        response.setSuccess(false);
-        response.setMessage(message);
-        return response;
-    }
-
-    // getters and setters
 }
