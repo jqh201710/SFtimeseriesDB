@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/timeseries")
+@RequestMapping("/api/timeseries2")
 public class TimeSeriesController {
 
     @Autowired
