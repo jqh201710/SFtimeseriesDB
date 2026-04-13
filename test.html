@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时序数据库测试工具 - 支持日期时间选择</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .api-url-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .api-url-bar label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .api-url-bar input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        .status {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status.online {
+            background: #10b981;
+            color: white;
+        }
+
+        .status.offline {
+            background: #ef4444;
+            color: white;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(550px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #e0e7ff;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+            font-size: 14px;
+        }
+
+        label .optional {
+            color: #999;
+            font-weight: normal;
+            font-size: 12px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input[type="datetime-local"] {
+            font-family: inherit;
+        }
+
+        .timestamp-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .timestamp-row input {
+            flex: 2;
+        }
+
+        .timestamp-row .timestamp-value {
+            flex: 1;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            background: #f3f4f6;
+            padding: 8px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        textarea {
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-top: 5px;
+        }
+
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+
+        button.secondary {
+            background: #6b7280;
+        }
+
+        button.secondary:hover {
+            background: #4b5563;
+        }
+
+        button.danger {
+            background: #ef4444;
+        }
+
+        button.danger:hover {
+            background: #dc2626;
+        }
+
+        button.success {
+            background: #10b981;
+        }
+
+        button.success:hover {
+            background: #059669;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .response {
+            background: #1e1e2e;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .response.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .response.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .batch-item {
+            background: #f3f4f6;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .batch-item .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .batch-item .row input {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .batch-item .timestamp-row {
+            margin-top: 8px;
+        }
+
+        .metrics-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .metric-tag {
+            background: #e0e7ff;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .metric-tag:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .metric-tag.selected {
+            background: #667eea;
+            color: white;
+        }
+
+        hr {
+            margin: 20px 0;
+            border: none;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .inline-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📊 时序数据库测试工具</h1>
+
+    <div class="api-url-bar">
+        <label>API地址:</label>
+        <input type="text" id="baseUrl" value="http://localhost:11002/api/timeseries" placeholder="http://localhost:11002/api/timeseries">
+        <button onclick="testConnection()">测试连接</button>
+        <span id="connectionStatus" class="status offline">未测试</span>
+    </div>
+
+    <div class="grid">
+        <!-- 单点写入 -->
+        <div class="card">
+            <h2>✏️ 单点写入</h2>
+            <div class="form-group">
+                <label>Measurement (指标名)</label>
+                <input type="text" id="writeMetric" placeholder="例如: cpu_usage" value="cpu_usage">
+            </div>
+            <div class="form-group">
+                <label>Value (数值)</label>
+                <input type="number" id="writeValue" step="any" placeholder="例如: 45.5" value="45.5">
+            </div>
+            <div class="form-group">
+                <label>时间选择</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="writeDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('writeDateTime', 'writeTimestamp')">同步</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>毫秒时间戳 <span class="optional">(自动生成)</span></label>
+                <div class="timestamp-row">
+                    <input type="text" id="writeTimestamp" placeholder="毫秒时间戳" readonly style="background:#f3f4f6">
+                    <button class="btn-small" onclick="setCurrentTimestampToInput('writeTimestamp', 'writeDateTime')">使用当前时间</button>
+                </div>
+            </div>
+            <button onclick="writeSinglePoint()">写入数据</button>
+            <div id="writeResponse" class="response">等待操作...</div>
+        </div>
+
+        <!-- 批量写入 -->
+        <div class="card">
+            <h2>📦 批量写入</h2>
+            <div id="batchItems">
+                <div class="batch-item">
+                    <div class="row">
+                        <input type="text" placeholder="metric" value="cpu_usage">
+                        <input type="number" placeholder="value" value="42.5">
+                    </div>
+                    <div class="timestamp-row">
+                        <input type="datetime-local" class="batch-datetime">
+                        <input type="text" class="batch-timestamp" placeholder="毫秒时间戳" readonly style="background:#f3f4f6;font-size:12px">
+                    </div>
+                </div>
+            </div>
+            <div class="inline-buttons">
+                <button onclick="addBatchItem()">+ 添加指标</button>
+                <button onclick="batchWrite()">批量写入</button>
+                <button onclick="fillBatchWithCurrentTimes()" class="secondary btn-small">填充当前时间</button>
+            </div>
+            <div id="batchWriteResponse" class="response">等待操作...</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- 单点查询 -->
+        <div class="card">
+            <h2>🔍 单点查询 (按时间戳)</h2>
+            <div class="form-group">
+                <label>Measurement</label>
+                <input type="text" id="queryPointMetric" placeholder="cpu_usage" value="cpu_usage">
+            </div>
+            <div class="form-group">
+                <label>时间选择</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="queryPointDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('queryPointDateTime', 'queryPointTime')">同步</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>毫秒时间戳</label>
+                <div class="timestamp-row">
+                    <input type="text" id="queryPointTime" placeholder="毫秒时间戳">
+                    <button class="btn-small" onclick="setCurrentTimestampToInput('queryPointTime', 'queryPointDateTime')">使用当前时间</button>
+                </div>
+            </div>
+            <button onclick="querySinglePoint()">查询</button>
+            <div id="pointQueryResponse" class="response">等待操作...</div>
+        </div>
+
+        <!-- 范围查询 -->
+        <div class="card">
+            <h2>📈 范围查询 (单指标)</h2>
+            <div class="form-group">
+                <label>Measurement</label>
+                <input type="text" id="rangeMetric" placeholder="cpu_usage" value="cpu_usage">
+            </div>
+            <div class="form-group">
+                <label>开始时间</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="rangeStartDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('rangeStartDateTime', 'rangeStart')">同步</button>
+                </div>
+                <input type="text" id="rangeStart" placeholder="毫秒时间戳" style="margin-top:5px">
+            </div>
+            <div class="form-group">
+                <label>结束时间</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="rangeEndDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('rangeEndDateTime', 'rangeEnd')">同步</button>
+                </div>
+                <input type="text" id="rangeEnd" placeholder="毫秒时间戳" style="margin-top:5px">
+            </div>
+            <div class="inline-buttons">
+                <button onclick="setLastHourRange()">最近1小时</button>
+                <button onclick="setLastDayRange()">最近24小时</button>
+                <button onclick="queryRange()">查询</button>
+            </div>
+            <div id="rangeQueryResponse" class="response">等待操作...</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- 多指标查询 -->
+        <div class="card">
+            <h2>📊 多指标查询</h2>
+            <div class="form-group">
+                <label>Measurements (逗号分隔)</label>
+                <input type="text" id="multiMetrics" placeholder="例如: cpu_usage,memory_usage,disk_usage" value="cpu_usage,memory_usage">
+            </div>
+            <div class="form-group">
+                <label>开始时间</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="multiStartDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('multiStartDateTime', 'multiStart')">同步</button>
+                </div>
+                <input type="text" id="multiStart" placeholder="毫秒时间戳" style="margin-top:5px">
+            </div>
+            <div class="form-group">
+                <label>结束时间</label>
+                <div class="timestamp-row">
+                    <input type="datetime-local" id="multiEndDateTime">
+                    <button class="btn-small secondary" onclick="syncDateTimeToTimestamp('multiEndDateTime', 'multiEnd')">同步</button>
+                </div>
+                <input type="text" id="multiEnd" placeholder="毫秒时间戳" style="margin-top:5px">
+            </div>
+            <div class="inline-buttons">
+                <button onclick="setMultiLastHour()">最近1小时</button>
+                <button onclick="queryMultiMetric()">查询多指标</button>
+            </div>
+            <div id="multiQueryResponse" class="response">等待操作...</div>
+        </div>
+
+        <!-- 快速测试面板 -->
+        <div class="card">
+            <h2>⚡ 快速测试</h2>
+            <div class="metrics-list" id="quickMetrics">
+                <span class="metric-tag" onclick="selectMetric('cpu_usage')">cpu_usage</span>
+                <span class="metric-tag" onclick="selectMetric('memory_usage')">memory_usage</span>
+                <span class="metric-tag" onclick="selectMetric('disk_usage')">disk_usage</span>
+                <span class="metric-tag" onclick="selectMetric('temperature')">temperature</span>
+            </div>
+            <div class="form-group">
+                <label>测试数值</label>
+                <input type="number" id="quickValue" step="any" value="75.5">
+            </div>
+            <div class="inline-buttons">
+                <button onclick="quickWrite()">写入当前指标</button>
+                <button onclick="quickQuery()">查询当前指标(最近1小时)</button>
+                <button onclick="generateTestData()" class="secondary btn-small">生成测试数据(5条)</button>
+            </div>
+            <div id="quickResponse" class="response">等待操作...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = document.getElementById('baseUrl');
+
+    // 辅助函数：将日期时间字符串转换为毫秒时间戳
+    function dateTimeToTimestamp(dateTimeStr) {
+        if (!dateTimeStr) return null;
+        return new Date(dateTimeStr).getTime();
+    }
+
+    // 将毫秒时间戳转换为日期时间字符串 (用于datetime-local输入框)
+    function timestampToDateTime(timestamp) {
+        if (!timestamp) return '';
+        const date = new Date(parseInt(timestamp));
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    // 同步日期时间选择器到时间戳输入框
+    function syncDateTimeToTimestamp(dateTimeInputId, timestampInputId) {
+        const dateTimeStr = document.getElementById(dateTimeInputId).value;
+        if (dateTimeStr) {
+            const timestamp = dateTimeToTimestamp(dateTimeStr);
+            document.getElementById(timestampInputId).value = timestamp;
+        }
+    }
+
+    // 同步时间戳到日期时间选择器
+    function syncTimestampToDateTime(timestampInputId, dateTimeInputId) {
+        const timestamp = document.getElementById(timestampInputId).value;
+        if (timestamp) {
+            const dateTimeStr = timestampToDateTime(timestamp);
+            document.getElementById(dateTimeInputId).value = dateTimeStr;
+        }
+    }
+
+    // 设置当前时间到输入框和日期时间选择器
+    function setCurrentTimestampToInput(timestampInputId, dateTimeInputId) {
+        const now = Date.now();
+        document.getElementById(timestampInputId).value = now;
+        if (dateTimeInputId) {
+            document.getElementById(dateTimeInputId).value = timestampToDateTime(now);
+        }
+    }
+
+    // 获取当前毫秒时间戳
+    function getCurrentTimestamp() {
+        return Date.now();
+    }
+
+    // 填充批量写入的时间戳（使用当前时间）
+    function fillBatchWithCurrentTimes() {
+        const now = getCurrentTimestamp();
+        const items = document.querySelectorAll('#batchItems .batch-item');
+        items.forEach((item, idx) => {
+            const timestampInput = item.querySelector('.batch-timestamp');
+            const dateTimeInput = item.querySelector('.batch-datetime');
+            const ts = now + (idx * 1000);
+            timestampInput.value = ts;
+            if (dateTimeInput) {
+                dateTimeInput.value = timestampToDateTime(ts);
+            }
+        });
+    }
+
+    // 添加批量写入项
+    function addBatchItem() {
+        const container = document.getElementById('batchItems');
+        const newItem = document.createElement('div');
+        newItem.className = 'batch-item';
+        newItem.innerHTML = `
+            <div class="row">
+                <input type="text" placeholder="metric" value="cpu_usage">
+                <input type="number" placeholder="value" value="${(Math.random() * 100).toFixed(1)}">
+                <button class="btn-small danger" onclick="this.closest('.batch-item').remove()">删除</button>
+            </div>
+            <div class="timestamp-row">
+                <input type="datetime-local" class="batch-datetime">
+                <input type="text" class="batch-timestamp" placeholder="毫秒时间戳" readonly style="background:#f3f4f6;font-size:12px">
+            </div>
+        `;
+        container.appendChild(newItem);
+    }
+
+    // 测试连接
+    async function testConnection() {
+        const baseUrl = API_BASE.value;
+        const statusSpan = document.getElementById('connectionStatus');
+
+        try {
+            const response = await fetch(`${baseUrl}/query/point?measurement=cpu_usage&targetTime=${getCurrentTimestamp()}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok || response.status === 404) {
+                statusSpan.textContent = '在线';
+                statusSpan.className = 'status online';
+            } else {
+                throw new Error('连接失败');
+            }
+        } catch (error) {
+            statusSpan.textContent = '离线 - 请确认服务已启动并配置CORS';
+            statusSpan.className = 'status offline';
+        }
+    }
+
+    // 通用请求函数
+    async function apiRequest(url, options) {
+        const baseUrl = API_BASE.value;
+        try {
+            const response = await fetch(`${baseUrl}${url}`, options);
+            const text = await response.text();
+            try {
+                return { success: true, data: JSON.parse(text), raw: text, status: response.status };
+            } catch {
+                return { success: true, data: text, raw: text, status: response.status };
+            }
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 显示响应结果
+    function showResponse(elementId, result, isError = false) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = JSON.stringify(result, null, 2);
+        element.className = isError ? 'response error' : 'response success';
+    }
+
+    // 单点写入
+    async function writeSinglePoint() {
+        const metric = document.getElementById('writeMetric').value;
+        const value = parseFloat(document.getElementById('writeValue').value);
+        let timestamp = document.getElementById('writeTimestamp').value;
+
+        if (!timestamp) {
+            setCurrentTimestampToInput('writeTimestamp', 'writeDateTime');
+            timestamp = document.getElementById('writeTimestamp').value;
+        }
+
+        const result = await apiRequest('/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ measurement: metric, value: value, timestamp: parseInt(timestamp) })
+        });
+
+        showResponse('writeResponse', result);
+    }
+
+    // 批量写入
+    async function batchWrite() {
+        const items = document.querySelectorAll('#batchItems .batch-item');
+        const requests = [];
+
+        for (let item of items) {
+            const inputs = item.querySelectorAll('.row input');
+            const metric = inputs[0].value;
+            const value = parseFloat(inputs[1].value);
+            const timestampInput = item.querySelector('.batch-timestamp');
+            const timestamp = timestampInput.value;
+
+            if (!metric || isNaN(value) || !timestamp) {
+                showResponse('batchWriteResponse', { error: '请填写完整的数据（包括时间戳）' });
+                return;
+            }
+
+            requests.push({
+                measurement: metric,
+                value: value,
+                timestamp: parseInt(timestamp)
+            });
+        }
+
+        if (requests.length === 0) {
+            showResponse('batchWriteResponse', { error: '请至少添加一条数据' });
+            return;
+        }
+
+        const result = await apiRequest('/batch-write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requests)
+        });
+
+        showResponse('batchWriteResponse', result);
+    }
+
+    // 单点查询
+    async function querySinglePoint() {
+        const metric = document.getElementById('queryPointMetric').value;
+        let targetTime = document.getElementById('queryPointTime').value;
+
+        if (!targetTime) {
+            setCurrentTimestampToInput('queryPointTime', 'queryPointDateTime');
+            targetTime = document.getElementById('queryPointTime').value;
+        }
+
+        const result = await apiRequest(`/query/point?measurement=${metric}&targetTime=${targetTime}`, {
+            method: 'GET'
+        });
+
+        showResponse('pointQueryResponse', result);
+    }
+
+    // 范围查询
+    async function queryRange() {
+        const metric = document.getElementById('rangeMetric').value;
+        let start = document.getElementById('rangeStart').value;
+        let end = document.getElementById('rangeEnd').value;
+
+        if (!start || !end) {
+            setLastHourRange();
+            start = document.getElementById('rangeStart').value;
+            end = document.getElementById('rangeEnd').value;
+        }
+
+        const result = await apiRequest(`/query/range?measurement=${metric}&start=${start}&end=${end}`, {
+            method: 'GET'
+        });
+
+        showResponse('rangeQueryResponse', result);
+    }
+
+    // 设置最近1小时范围
+    function setLastHourRange() {
+        const now = getCurrentTimestamp();
+        const start = now - 3600000;
+        document.getElementById('rangeStart').value = start;
+        document.getElementById('rangeStartDateTime').value = timestampToDateTime(start);
+        document.getElementById('rangeEnd').value = now;
+        document.getElementById('rangeEndDateTime').value = timestampToDateTime(now);
+    }
+
+    // 设置最近24小时范围
+    function setLastDayRange() {
+        const now = getCurrentTimestamp();
+        const start = now - 86400000;
+        document.getElementById('rangeStart').value = start;
+        document.getElementById('rangeStartDateTime').value = timestampToDateTime(start);
+        document.getElementById('rangeEnd').value = now;
+        document.getElementById('rangeEndDateTime').value = timestampToDateTime(now);
+    }
+
+    // 多指标查询
+    async function queryMultiMetric() {
+        const metrics = document.getElementById('multiMetrics').value;
+        let start = document.getElementById('multiStart').value;
+        let end = document.getElementById('multiEnd').value;
+
+        if (!start || !end) {
+            setMultiLastHour();
+            start = document.getElementById('multiStart').value;
+            end = document.getElementById('multiEnd').value;
+        }
+
+        const result = await apiRequest(`/query/multi?measurements=${encodeURIComponent(metrics)}&start=${start}&end=${end}`, {
+            method: 'GET'
+        });
+
+        showResponse('multiQueryResponse', result);
+    }
+
+    function setMultiLastHour() {
+        const now = getCurrentTimestamp();
+        const start = now - 3600000;
+        document.getElementById('multiStart').value = start;
+        document.getElementById('multiStartDateTime').value = timestampToDateTime(start);
+        document.getElementById('multiEnd').value = now;
+        document.getElementById('multiEndDateTime').value = timestampToDateTime(now);
+    }
+
+    // 快速测试相关
+    let selectedMetric = 'cpu_usage';
+
+    function selectMetric(metric) {
+        selectedMetric = metric;
+        document.querySelectorAll('.metric-tag').forEach(tag => {
+            if (tag.innerText === metric) {
+                tag.classList.add('selected');
+            } else {
+                tag.classList.remove('selected');
+            }
+        });
+    }
+
+    async function quickWrite() {
+        const value = parseFloat(document.getElementById('quickValue').value);
+        const timestamp = getCurrentTimestamp();
+
+        const result = await apiRequest('/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ measurement: selectedMetric, value: value, timestamp: timestamp })
+        });
+
+        showResponse('quickResponse', {
+            message: `写入成功: ${selectedMetric} = ${value} @ ${timestamp} (${new Date(timestamp).toLocaleString()})`,
+            response: result
+        });
+    }
+
+    async function quickQuery() {
+        const now = getCurrentTimestamp();
+        const start = now - 3600000;
+
+        const result = await apiRequest(`/query/range?measurement=${selectedMetric}&start=${start}&end=${now}`, {
+            method: 'GET'
+        });
+
+        if (result.success && result.data && result.data.dataPoints) {
+            const points = result.data.dataPoints;
+            let summary = `📊 ${selectedMetric} 最近1小时数据 (共${points.length}条):\n`;
+            points.slice(-10).forEach(p => {
+                summary += `  ${new Date(p.timestamp).toLocaleString()}: ${p.value}\n`;
+            });
+            if (points.length > 10) summary += `  ... 还有${points.length - 10}条`;
+            showResponse('quickResponse', { summary, fullData: result.data });
+        } else {
+            showResponse('quickResponse', result);
+        }
+    }
+
+    async function generateTestData() {
+        const now = getCurrentTimestamp();
+        const requests = [];
+        const metric = selectedMetric;
+        const baseValue = parseFloat(document.getElementById('quickValue').value) || 50;
+
+        for (let i = 0; i < 5; i++) {
+            requests.push({
+                measurement: metric,
+                value: +(baseValue + (Math.random() * 10 - 5)).toFixed(2),
+                timestamp: now - (4 - i) * 10000
+            });
+        }
+
+        const result = await apiRequest('/batch-write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requests)
+        });
+
+        showResponse('quickResponse', {
+            message: `已生成5条测试数据 (${metric})`,
+            data: requests,
+            result: result
+        });
+    }
+
+    // 初始化：设置当前时间
+    setCurrentTimestampToInput('writeTimestamp', 'writeDateTime');
+    setLastHourRange();
+    setMultiLastHour();
+    setCurrentTimestampToInput('queryPointTime', 'queryPointDateTime');
+    selectMetric('cpu_usage');
+</script>
+</body>
+</html>
