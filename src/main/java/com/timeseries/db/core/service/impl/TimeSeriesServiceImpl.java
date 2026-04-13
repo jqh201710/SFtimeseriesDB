@@ -1,3 +1,4 @@
+// ==================== TimeSeriesServiceImpl.java（修复采样逻辑） ====================
 package com.timeseries.db.core.service.impl;
 
 import com.timeseries.db.core.model.Point;
@@ -18,7 +19,6 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
     @Autowired
     private FileStorageEngine fileStorageEngine;
 
-    // 原有方法保留
     @Override
     public void write(Point point) {
         fileStorageEngine.write(point);
@@ -26,9 +26,7 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
 
     @Override
     public void batchWrite(List<Point> points) {
-        for (Point point : points) {
-            fileStorageEngine.write(point);
-        }
+        fileStorageEngine.batchWrite(points);
     }
 
     @Override
@@ -36,7 +34,6 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
         return fileStorageEngine.query(query);
     }
 
-    // ========== 新增扩展方法实现 ==========
     @Override
     public List<SamplingData> queryByRangeAndInterval(String measurement,
                                                       Map<String, String> tagFilters,
@@ -44,51 +41,65 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
                                                       long startTime,
                                                       long endTime,
                                                       long interval) {
-        // 1. 构建基础查询条件，获取时间范围内的全量数据
+        // 1. 查询全量数据
         Query query = new Query();
         query.setMeasurement(measurement);
-        query.setTagFilters(tagFilters);
+        query.setTagFilters(tagFilters != null ? tagFilters : new HashMap<>());
         query.setField(field);
         query.setTimeRange(new TimeRange(startTime, endTime));
         List<Point> allPoints = fileStorageEngine.query(query);
 
-        // 2. 按时间戳排序（保证采样顺序）
+        if (allPoints.isEmpty()) {
+            // 返回空采样点
+            List<SamplingData> emptyResult = new ArrayList<>();
+            for (long t = startTime; t <= endTime; t += interval) {
+                emptyResult.add(new SamplingData(t, null));
+            }
+            return emptyResult;
+        }
+
+        // 2. 按时间排序
         List<Point> sortedPoints = allPoints.stream()
                 .sorted(Comparator.comparingLong(Point::getTimestamp))
                 .collect(Collectors.toList());
 
-        // 3. 按间隔采样（默认取每个间隔内最后一条数据）
+        // 3. 按间隔采样 - 修复后的逻辑
         List<SamplingData> samplingList = new ArrayList<>();
-        long currentTime = startTime;
         int pointIndex = 0;
         int pointCount = sortedPoints.size();
 
-        while (currentTime <= endTime) {
-            // 确定当前采样间隔的结束时间
-            long intervalEnd = currentTime + interval;
+        for (long windowStart = startTime; windowStart <= endTime; windowStart += interval) {
+            long windowEnd = windowStart + interval;
             SamplingData samplingData = new SamplingData();
-            samplingData.setTimestamp(currentTime);
-            samplingData.setValue(null); // 默认值
+            samplingData.setTimestamp(windowStart);
 
-            // 遍历当前间隔内的所有数据，取最后一条
-            for (; pointIndex < pointCount; pointIndex++) {
+            // 找当前窗口内最后一条数据
+            Point lastInWindow = null;
+            while (pointIndex < pointCount) {
                 Point point = sortedPoints.get(pointIndex);
                 long pointTime = point.getTimestamp();
 
-                if (pointTime < currentTime) {
-                    continue; // 早于当前采样起点，跳过
+                if (pointTime < windowStart) {
+                    pointIndex++;
+                    continue;
                 }
-                if (pointTime >= intervalEnd) {
-                    break; // 超出当前间隔，退出循环
+                if (pointTime >= windowEnd) {
+                    // 超出当前窗口，不移动索引，留给下一个窗口
+                    break;
                 }
+                // 在当前窗口内
+                lastInWindow = point;
+                pointIndex++;
+            }
 
-                // 更新为当前间隔内的最新值
-                samplingData.setValue(point.getFields().get(field));
+            if (lastInWindow != null) {
+                samplingData.setValue(lastInWindow.getFields().get(field));
+            } else {
+                // 如果当前窗口没有数据，尝试用前一个窗口的最后一条数据填充（可选）
+                samplingData.setValue(null);
             }
 
             samplingList.add(samplingData);
-            // 进入下一个采样间隔
-            currentTime += interval;
         }
 
         return samplingList;
@@ -100,40 +111,29 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
                                            String field,
                                            long targetTime,
                                            long timeTolerance) {
-        // 1. 构建时间范围：targetTime ± timeTolerance
         long startTime = targetTime - timeTolerance;
         long endTime = targetTime + timeTolerance;
 
-        // 2. 查询该时间范围内的所有数据
         Query query = new Query();
         query.setMeasurement(measurement);
-        query.setTagFilters(tagFilters);
+        query.setTagFilters(tagFilters != null ? tagFilters : new HashMap<>());
         query.setField(field);
         query.setTimeRange(new TimeRange(startTime, endTime));
         List<Point> points = fileStorageEngine.query(query);
 
         if (points.isEmpty()) {
-            return new SamplingData(targetTime, null); // 无匹配数据
+            return new SamplingData(targetTime, null);
         }
 
-        // 3. 找到最接近targetTime的那条数据
-        Point closestPoint = null;
-        long minDiff = Long.MAX_VALUE;
+        // 找到最接近targetTime的数据
+        Point closestPoint = points.stream()
+                .min(Comparator.comparingLong(p -> Math.abs(p.getTimestamp() - targetTime)))
+                .orElse(null);
 
-        for (Point point : points) {
-            long diff = Math.abs(point.getTimestamp() - targetTime);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closestPoint = point;
-            }
-        }
-
-        // 4. 封装结果
         if (closestPoint != null) {
             return new SamplingData(closestPoint.getTimestamp(),
                     closestPoint.getFields().get(field));
-        } else {
-            return new SamplingData(targetTime, null);
         }
+        return new SamplingData(targetTime, null);
     }
 }

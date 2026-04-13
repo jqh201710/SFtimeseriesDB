@@ -1,21 +1,20 @@
-// com.timeseries.db.core.storage.MemoryCache.java
+// ==================== MemoryCache.java（增强） ====================
 package com.timeseries.db.core.storage;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.timeseries.db.config.TimeSeriesConfig;
 import com.timeseries.db.core.model.Point;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-/**
- * 轻量级LRU缓存：仅缓存最近热点数据，控制内存占用
- * 缓存Key格式：measurement::tag1=value1::tag2=value2
- */
+@Slf4j
 @Component
 public class MemoryCache {
 
@@ -24,42 +23,59 @@ public class MemoryCache {
 
     private Cache<String, List<Point>> cache;
 
+    // 记录measurement对应的所有缓存Key，用于批量失效
+    private final ConcurrentHashMap<String, java.util.Set<String>> measurementKeyIndex = new ConcurrentHashMap<>();
+
     @PostConstruct
     public void init() {
         TimeSeriesConfig.CacheConfig cacheConfig = config.getCache();
-        // 初始化LRU缓存：设置最大容量+过期时间
         cache = CacheBuilder.newBuilder()
                 .maximumSize(cacheConfig.getMaxSize())
                 .expireAfterWrite(cacheConfig.getExpireMinutes(), TimeUnit.MINUTES)
                 .concurrencyLevel(Runtime.getRuntime().availableProcessors())
+                .removalListener(notification -> {
+                    // 缓存移除时清理索引（简化处理，实际可优化）
+                })
                 .build();
     }
 
-    /**
-     * 添加缓存
-     */
     public void put(String key, List<Point> points) {
         cache.put(key, points);
+        // 提取measurement并建立索引
+        String measurement = extractMeasurement(key);
+        measurementKeyIndex.computeIfAbsent(measurement, k ->
+                java.util.Collections.newSetFromMap(new ConcurrentHashMap<>())).add(key);
     }
 
-    /**
-     * 获取缓存
-     */
     public List<Point> get(String key) {
         return cache.getIfPresent(key);
     }
 
-    /**
-     * 移除缓存
-     */
     public void remove(String key) {
         cache.invalidate(key);
     }
 
-    /**
-     * 清理所有缓存
-     */
     public void clear() {
         cache.invalidateAll();
+        measurementKeyIndex.clear();
+    }
+
+    /**
+     * 按measurement前缀失效缓存（用于写入后刷新）
+     */
+    public void invalidateByPrefix(String measurement) {
+        java.util.Set<String> keys = measurementKeyIndex.get(measurement);
+        if (keys != null) {
+            for (String key : keys) {
+                cache.invalidate(key);
+            }
+            keys.clear();
+        }
+    }
+
+    private String extractMeasurement(String key) {
+        // key格式: measurement::tags::field::start::end 或 measurement::field::start::end
+        int idx = key.indexOf("::");
+        return idx > 0 ? key.substring(0, idx) : key;
     }
 }
