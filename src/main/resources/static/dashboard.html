@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时序数据库 - 监控仪表盘</title>
+    <script src="./js/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(90deg, #1a2980 0%, #26d0ce 100%);
+            color: white;
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 1000;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-right input {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 4px;
+            width: 320px;
+            font-size: 13px;
+        }
+        .header-right button {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .header-right button:hover { background: rgba(255,255,255,0.35); }
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #ef4444;
+        }
+        .status-badge.online { background: #10b981; }
+
+        .main-container {
+            display: flex;
+            margin-top: 56px;
+            height: calc(100vh - 56px);
+        }
+        .sidebar {
+            width: 260px;
+            background: #fff;
+            border-right: 1px solid #e8e8e8;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-search {
+            padding: 12px;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .sidebar-search input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .sidebar-search input:focus {
+            outline: none;
+            border-color: #1a2980;
+        }
+        .metric-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .metric-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+            margin-bottom: 4px;
+        }
+        .metric-item:hover { background: #e6f7ff; }
+        .metric-item.active {
+            background: #1a2980;
+            color: white;
+        }
+        .metric-item .tag {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.06);
+        }
+        .metric-item.active .tag {
+            background: rgba(255,255,255,0.25);
+            color: white;
+        }
+        .sidebar-section-title {
+            padding: 12px 12px 6px;
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            background: #fff;
+            padding: 4px;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            width: fit-content;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+            border: none;
+            background: transparent;
+        }
+        .tab:hover { color: #1a2980; }
+        .tab.active {
+            background: #1a2980;
+            color: white;
+        }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1a2980;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #1a2980;
+        }
+        .form-group input[readonly] {
+            background: #f5f5f5;
+        }
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #1a2980;
+            color: white;
+        }
+        .btn-primary:hover { background: #13205e; }
+        .btn-secondary {
+            background: #f0f2f5;
+            color: #333;
+        }
+        .btn-secondary:hover { background: #e0e2e5; }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .btn-success:hover { background: #059669; }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .response-box {
+            background: #1e1e2e;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow: auto;
+            margin-top: 12px;
+        }
+        .response-box.success { border-left: 3px solid #10b981; }
+        .response-box.error { border-left: 3px solid #ef4444; }
+
+        .chart-container {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            margin-bottom: 16px;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a2980;
+        }
+        #mainChart, #multiChart {
+            width: 100%;
+            height: 400px;
+        }
+
+        .batch-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .batch-row input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .batch-row .ts-input {
+            width: 160px;
+            flex: none;
+        }
+
+        .metric-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .metric-tag {
+            padding: 6px 12px;
+            background: #e6f7ff;
+            color: #1a2980;
+            border-radius: 16px;
+            font-size: 12px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .metric-tag:hover { background: #bae7ff; }
+        .metric-tag.selected {
+            background: #1a2980;
+            color: white;
+            border-color: #1a2980;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .stat-card {
+            flex: 1;
+            background: #fff;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a2980;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 时序数据库监控仪表盘</h1>
+        <div class="header-right">
+            <input type="text" id="baseUrl" value="http://localhost:11002/api/timeseries" placeholder="API基础地址">
+            <button onclick="testConnection()">测试连接</button>
+            <span id="connStatus" class="status-badge">离线</span>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- 左侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-search">
+                <input type="text" id="metricSearch" placeholder="搜索指标 (measurement)..." oninput="filterMetrics()">
+            </div>
+            <div class="sidebar-section-title">系统指标</div>
+            <div class="metric-list" id="systemMetrics"></div>
+            <div class="sidebar-section-title">设备指标</div>
+            <div class="metric-list" id="deviceMetrics"></div>
+        </div>
+
+        <!-- 右侧内容 -->
+        <div class="content">
+            <!-- Tab 切换 -->
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('write')">✏️ 数据写入</button>
+                <button class="tab" onclick="switchTab('query')">🔍 数据查询</button>
+                <button class="tab" onclick="switchTab('chart')">📈 历史曲线</button>
+            </div>
+
+            <!-- 写入面板 -->
+            <div id="tab-write" class="tab-panel active">
+                <div class="card">
+                    <div class="card-title">✏️ 单点写入</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Measurement (指标名)</label>
+                            <input type="text" id="swMetric" placeholder="例如: cpu_usage" list="metricDatalist">
+                        </div>
+                        <div class="form-group">
+                            <label>Value (数值)</label>
+                            <input type="number" id="swValue" step="any" placeholder="例如: 45.5" value="45.5">
+                        </div>
+                        <div class="form-group">
+                            <label>时间</label>
+                            <input type="datetime-local" id="swTimestamp" step="1">
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="simpleWrite()">写入数据</button>
+                        <button class="btn btn-secondary" onclick="setNow('swTimestamp')">使用当前时间</button>
+                    </div>
+                    <div id="swResponse" class="response-box" style="display:none"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📦 批量写入</div>
+                    <div id="batchContainer">
+                        <div class="batch-row">
+                            <input type="text" placeholder="指标名" class="bw-metric" value="cpu_usage">
+                            <input type="number" step="any" placeholder="数值" class="bw-value" value="42.5">
+                            <input type="datetime-local" class="bw-timestamp ts-input" step="1">
+                            <button class="btn btn-danger btn-sm" onclick="removeBatchRow(this)">删除</button>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="addBatchRow()">+ 添加一行</button>
+                        <button class="btn btn-primary" onclick="batchWrite()">批量写入</button>
+                        <button class="btn btn-secondary" onclick="fillBatchNow()">填充当前时间</button>
+                    </div>
+                    <div id="bwResponse" class="response-box" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- 查询面板 -->
+            <div id="tab-query" class="tab-panel">
+                <div class="card">
+                    <div class="card-title">🔍 单点实时查询</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Measurement</label>
+                            <input type="text" id="qpMetric" placeholder="cpu_usage" list="metricDatalist">
+                        </div>
+                        <div class="form-group">
+                            <label>目标时间</label>
+                            <input type="datetime-local" id="qpTime" step="1">
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="queryPoint()">查询</button>
+                        <button class="btn btn-secondary" onclick="setNow('qpTime')">使用当前时间</button>
+                    </div>
+                    <div id="qpResponse" class="response-box" style="display:none"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📈 单指标范围查询</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Measurement</label>
+                            <input type="text" id="qrMetric" placeholder="cpu_usage" list="metricDatalist">
+                        </div>
+                        <div class="form-group">
+                            <label>开始时间</label>
+                            <input type="datetime-local" id="qrStart" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>结束时间</label>
+                            <input type="datetime-local" id="qrEnd" step="1">
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="setRange('qr', 3600000)">最近1小时</button>
+                        <button class="btn btn-secondary" onclick="setRange('qr', 86400000)">最近24小时</button>
+                        <button class="btn btn-secondary" onclick="setRange('qr', 604800000)">最近7天</button>
+                        <button class="btn btn-primary" onclick="queryRange()">查询</button>
+                    </div>
+                    <div id="qrResponse" class="response-box" style="display:none"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📊 多指标范围查询</div>
+                    <div class="form-group">
+                        <label>选择指标 (点击切换)</label>
+                        <div class="metric-tags" id="multiMetricTags"></div>
+                        <input type="text" id="qmMetrics" placeholder="或手动输入，逗号分隔: cpu_usage,memory_usage" style="margin-top:8px;">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>开始时间</label>
+                            <input type="datetime-local" id="qmStart" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>结束时间</label>
+                            <input type="datetime-local" id="qmEnd" step="1">
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="setRange('qm', 3600000)">最近1小时</button>
+                        <button class="btn btn-secondary" onclick="setRange('qm', 86400000)">最近24小时</button>
+                        <button class="btn btn-secondary" onclick="setRange('qm', 604800000)">最近7天</button>
+                        <button class="btn btn-primary" onclick="queryMulti()">查询</button>
+                    </div>
+                    <div id="qmResponse" class="response-box" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- 图表面板 -->
+            <div id="tab-chart" class="tab-panel">
+                <div class="stats-bar">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statTotal">-</div>
+                        <div class="stat-label">总数据点数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statStart">-</div>
+                        <div class="stat-label">起始时间</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statEnd">-</div>
+                        <div class="stat-label">结束时间</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statAvg">-</div>
+                        <div class="stat-label">平均值</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">📈 单指标历史趋势</div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-sm" onclick="setChartRange(3600000)">1小时</button>
+                            <button class="btn btn-secondary btn-sm" onclick="setChartRange(86400000)">24小时</button>
+                            <button class="btn btn-secondary btn-sm" onclick="setChartRange(604800000)">7天</button>
+                            <button class="btn btn-primary btn-sm" onclick="drawSingleChart()">刷新图表</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>选择指标</label>
+                            <select id="chartMetric"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>开始时间</label>
+                            <input type="datetime-local" id="chartStart" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>结束时间</label>
+                            <input type="datetime-local" id="chartEnd" step="1">
+                        </div>
+                    </div>
+                    <div id="mainChart"></div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">📊 多指标对比趋势</div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-sm" onclick="setMultiChartRange(3600000)">1小时</button>
+                            <button class="btn btn-secondary btn-sm" onclick="setMultiChartRange(86400000)">24小时</button>
+                            <button class="btn btn-primary btn-sm" onclick="drawMultiChart()">刷新对比图</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>选择指标 (可多选)</label>
+                        <div class="metric-tags" id="chartMultiTags"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>开始时间</label>
+                            <input type="datetime-local" id="multiChartStart" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>结束时间</label>
+                            <input type="datetime-local" id="multiChartEnd" step="1">
+                        </div>
+                    </div>
+                    <div id="multiChart"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <datalist id="metricDatalist"></datalist>
+
+    <script>
+        const API_BASE = () => document.getElementById('baseUrl').value.replace(/\/$/, '');
+        let allMetrics = [];
+        let selectedMetrics = new Set();
+        let chartInstance = null;
+        let multiChartInstance = null;
+
+        const SYSTEM_METRICS = ['cpu_usage','memory_usage','disk_usage','cpu','concurrent_test_metric'];
+        const DEVICE_METRICS = [
+            'PC1YC100','PC1YC103','PC1YC104','PC1YC105','PC1YC106','PC1YC107','PC1YC108','PC1YC109','PC1YC110','PC1YC111','PC1YC112',
+            'PC1YC123','PC1YC124','PC1YC127','PC1YC128','PC1YC131','PC1YC132','PC1YC133','PC1YC134','PC1YC135','PC1YC136','PC1YC137','PC1YC138','PC1YC139','PC1YC140',
+            'PC1YC151','PC1YC152','PC1YC156','PC1YC159','PC1YC160','PC1YC161','PC1YC162','PC1YC163','PC1YC164','PC1YC165','PC1YC166','PC1YC167','PC1YC168',
+            'PC1YC179','PC1YC180','PC1YC183','PC1YC184','PC1YC187','PC1YC188','PC1YC189','PC1YC19','PC1YC190','PC1YC191','PC1YC192','PC1YC193','PC1YC194','PC1YC195','PC1YC196',
+            'PC1YC20','PC1YC207','PC1YC208','PC1YC21','PC1YC211','PC1YC212','PC1YC215','PC1YC216','PC1YC217','PC1YC218','PC1YC219','PC1YC22','PC1YC220','PC1YC221','PC1YC222','PC1YC223','PC1YC224','PC1YC23',
+            'PC1YC235','PC1YC236','PC1YC239','PC1YC24','PC1YC240','PC1YC243','PC1YC244','PC1YC245','PC1YC246','PC1YC247','PC1YC248','PC1YC249','PC1YC25','PC1YC250','PC1YC251','PC1YC252','PC1YC26',
+            'PC1YC263','PC1YC264','PC1YC267','PC1YC268','PC1YC27','PC1YC271','PC1YC272','PC1YC273','PC1YC274','PC1YC275','PC1YC276','PC1YC277','PC1YC278','PC1YC279','PC1YC28','PC1YC280',
+            'PC1YC291','PC1YC292','PC1YC295','PC1YC296','PC1YC299','PC1YC300','PC1YC301','PC1YC302','PC1YC303','PC1YC304','PC1YC305','PC1YC306','PC1YC307','PC1YC308',
+            'PC1YC319','PC1YC320','PC1YC323','PC1YC324','PC1YC327','PC1YC328','PC1YC329','PC1YC330','PC1YC331','PC1YC332','PC1YC333','PC1YC334','PC1YC335','PC1YC336',
+            'PC1YC347','PC1YC348','PC1YC351','PC1YC352','PC1YC355','PC1YC356','PC1YC357','PC1YC358','PC1YC359','PC1YC360','PC1YC361','PC1YC362','PC1YC363','PC1YC364',
+            'PC1YC375','PC1YC376','PC1YC379','PC1YC380','PC1YC383','PC1YC384','PC1YC385','PC1YC386','PC1YC387','PC1YC388','PC1YC389','PC1YC39','PC1YC390','PC1YC391','PC1YC392','PC1YC40',
+            'PC1YC403','PC1YC404','PC1YC405','PC1YC406','PC1YC407','PC1YC408','PC1YC411','PC1YC412','PC1YC413','PC1YC414','PC1YC415','PC1YC416','PC1YC417','PC1YC418','PC1YC419','PC1YC420',
+            'PC1YC43','PC1YC431','PC1YC432','PC1YC435','PC1YC436','PC1YC439','PC1YC44','PC1YC47','PC1YC48','PC1YC49','PC1YC50','PC1YC51','PC1YC52','PC1YC53','PC1YC54','PC1YC55','PC1YC56',
+            'PC1YC67','PC1YC68','PC1YC71','PC1YC72','PC1YC75','PC1YC76','PC1YC77','PC1YC78','PC1YC79','PC1YC80','PC1YC81','PC1YC82','PC1YC83','PC1YC84','PC1YC95','PC1YC96','PC1YC99','PC2YC66'
+        ];
+        allMetrics = [...SYSTEM_METRICS, ...DEVICE_METRICS];
+
+        function init() {
+            renderMetricList();
+            renderMetricTags();
+            renderChartOptions();
+            setChartRange(86400000);
+            setMultiChartRange(86400000);
+            testConnection();
+            window.addEventListener('resize', () => {
+                chartInstance && chartInstance.resize();
+                multiChartInstance && multiChartInstance.resize();
+            });
+        }
+
+        function renderMetricList() {
+            document.getElementById('systemMetrics').innerHTML = SYSTEM_METRICS.map(m => createMetricItem(m, '系统')).join('');
+            document.getElementById('deviceMetrics').innerHTML = DEVICE_METRICS.map(m => createMetricItem(m, '设备')).join('');
+        }
+
+        function createMetricItem(name, tag) {
+            return `<div class="metric-item" onclick="selectMetric('${name}')" data-name="${name}">
+                <span>${name}</span>
+                <span class="tag">${tag}</span>
+            </div>`;
+        }
+
+        function selectMetric(name) {
+            document.getElementById('swMetric').value = name;
+            document.getElementById('qpMetric').value = name;
+            document.getElementById('qrMetric').value = name;
+            document.getElementById('chartMetric').value = name;
+            document.querySelectorAll('.metric-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll(`.metric-item[data-name="${name}"]`).forEach(el => el.classList.add('active'));
+            if (document.getElementById('tab-chart').classList.contains('active')) {
+                drawSingleChart();
+            }
+        }
+
+        function filterMetrics() {
+            const keyword = document.getElementById('metricSearch').value.toLowerCase();
+            document.querySelectorAll('.metric-item').forEach(el => {
+                el.style.display = el.getAttribute('data-name').toLowerCase().includes(keyword) ? 'flex' : 'none';
+            });
+        }
+
+        function renderMetricTags() {
+            const tags = SYSTEM_METRICS.slice(0, 6).map(m =>
+                `<span class="metric-tag" onclick="toggleMetricTag(this, '${m}')">${m}</span>`
+            ).join('');
+            document.getElementById('multiMetricTags').innerHTML = tags;
+            document.getElementById('chartMultiTags').innerHTML = tags;
+        }
+
+        function toggleMetricTag(el, name) {
+            el.classList.toggle('selected');
+            el.classList.contains('selected') ? selectedMetrics.add(name) : selectedMetrics.delete(name);
+        }
+
+        function renderChartOptions() {
+            document.getElementById('chartMetric').innerHTML = allMetrics.map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+            if (name === 'chart') {
+                setTimeout(() => { chartInstance && chartInstance.resize(); multiChartInstance && multiChartInstance.resize(); }, 100);
+            }
+        }
+
+        async function request(path, options = {}) {
+            try {
+                const res = await fetch(API_BASE() + path, {
+                    ...options,
+                    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+                });
+                const text = await res.text();
+                try { return { ok: res.ok, data: JSON.parse(text), raw: text, status: res.status }; }
+                catch { return { ok: res.ok, data: text, raw: text, status: res.status }; }
+            } catch (e) {
+                return { ok: false, error: e.message };
+            }
+        }
+
+        async function testConnection() {
+            const res = await request('/query/point?measurement=cpu_usage&targetTime=' + Date.now());
+            const badge = document.getElementById('connStatus');
+            if (res.ok) { badge.textContent = '在线'; badge.className = 'status-badge online'; }
+            else { badge.textContent = '离线'; badge.className = 'status-badge'; }
+        }
+
+        function now() { return Date.now(); }
+        function pad(n) { return String(n).padStart(2, '0'); }
+        function toDatetimeLocal(ts) {
+            const d = new Date(ts);
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+        function fromDatetimeLocal(str) {
+            return str ? new Date(str).getTime() : null;
+        }
+        function setNow(id) { document.getElementById(id).value = toDatetimeLocal(now()); }
+        function setRange(prefix, duration) {
+            const end = now();
+            document.getElementById(prefix + 'Start').value = toDatetimeLocal(end - duration);
+            document.getElementById(prefix + 'End').value = toDatetimeLocal(end);
+        }
+        function setChartRange(duration) {
+            const end = now();
+            document.getElementById('chartStart').value = toDatetimeLocal(end - duration);
+            document.getElementById('chartEnd').value = toDatetimeLocal(end);
+        }
+        function setMultiChartRange(duration) {
+            const end = now();
+            document.getElementById('multiChartStart').value = toDatetimeLocal(end - duration);
+            document.getElementById('multiChartEnd').value = toDatetimeLocal(end);
+        }
+        function showResponse(id, result, isError) {
+            const el = document.getElementById(id);
+            el.style.display = 'block';
+            el.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+            el.className = 'response-box ' + (isError ? 'error' : 'success');
+        }
+        function fmtTime(ts) {
+            if (!ts) return '-';
+            const d = new Date(parseInt(ts));
+            return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+        function fmtNumber(n) {
+            if (n === null || n === undefined || isNaN(n)) return '-';
+            return Number(n).toFixed(2);
+        }
+
+        async function simpleWrite() {
+            const metric = document.getElementById('swMetric').value;
+            const value = parseFloat(document.getElementById('swValue').value);
+            let ts = fromDatetimeLocal(document.getElementById('swTimestamp').value);
+            if (!ts) ts = now();
+            const res = await request('/write', {
+                method: 'POST',
+                body: JSON.stringify({ measurement: metric, value: value, timestamp: parseInt(ts) })
+            });
+            showResponse('swResponse', res.data || res.error, !res.ok);
+        }
+
+        function addBatchRow() {
+            const div = document.createElement('div');
+            div.className = 'batch-row';
+            div.innerHTML = `
+                <input type="text" placeholder="指标名" class="bw-metric" value="cpu_usage">
+                <input type="number" step="any" placeholder="数值" class="bw-value" value="${(Math.random()*100).toFixed(1)}">
+                <input type="datetime-local" class="bw-timestamp ts-input" step="1">
+                <button class="btn btn-danger btn-sm" onclick="removeBatchRow(this)">删除</button>
+            `;
+            document.getElementById('batchContainer').appendChild(div);
+        }
+        function removeBatchRow(btn) { btn.closest('.batch-row').remove(); }
+        function fillBatchNow() {
+            const n = now();
+            document.querySelectorAll('.bw-timestamp').forEach((el, i) => { el.value = toDatetimeLocal(n + i * 1000); });
+        }
+        async function batchWrite() {
+            const requests = [];
+            document.querySelectorAll('.batch-row').forEach(row => {
+                const m = row.querySelector('.bw-metric').value;
+                const v = parseFloat(row.querySelector('.bw-value').value);
+                const t = row.querySelector('.bw-timestamp').value;
+                const ts = fromDatetimeLocal(t);
+                if (m && !isNaN(v) && ts) requests.push({ measurement: m, value: v, timestamp: ts });
+            });
+            if (requests.length === 0) { showResponse('bwResponse', '请至少填写一行完整数据', true); return; }
+            const res = await request('/batch-write', { method: 'POST', body: JSON.stringify(requests) });
+            showResponse('bwResponse', res.data || res.error, !res.ok);
+        }
+
+        async function queryPoint() {
+            const m = document.getElementById('qpMetric').value;
+            const t = fromDatetimeLocal(document.getElementById('qpTime').value) || now();
+            const res = await request(`/query/point?measurement=${encodeURIComponent(m)}&targetTime=${t}`);
+            showResponse('qpResponse', res.data || res.error, !res.ok);
+        }
+        async function queryRange() {
+            const m = document.getElementById('qrMetric').value;
+            const s = fromDatetimeLocal(document.getElementById('qrStart').value);
+            const e = fromDatetimeLocal(document.getElementById('qrEnd').value);
+            if (!s || !e) { showResponse('qrResponse', '请填写完整的时间范围', true); return; }
+            const res = await request(`/query/range?measurement=${encodeURIComponent(m)}&start=${s}&end=${e}`);
+            showResponse('qrResponse', res.data || res.error, !res.ok);
+        }
+        async function queryMulti() {
+            let metrics = document.getElementById('qmMetrics').value;
+            if (!metrics) {
+                if (selectedMetrics.size === 0) { showResponse('qmResponse', '请选择或输入至少一个指标', true); return; }
+                metrics = Array.from(selectedMetrics).join(',');
+            }
+            const s = fromDatetimeLocal(document.getElementById('qmStart').value);
+            const e = fromDatetimeLocal(document.getElementById('qmEnd').value);
+            if (!s || !e) { showResponse('qmResponse', '请填写完整的时间范围', true); return; }
+            const res = await request(`/query/multi?measurements=${encodeURIComponent(metrics)}&start=${s}&end=${e}`);
+            showResponse('qmResponse', res.data || res.error, !res.ok);
+        }
+
+        async function drawSingleChart() {
+            const metric = document.getElementById('chartMetric').value;
+            const start = fromDatetimeLocal(document.getElementById('chartStart').value);
+            const end = fromDatetimeLocal(document.getElementById('chartEnd').value);
+            if (!start || !end) return;
+            const res = await request(`/query/range?measurement=${encodeURIComponent(metric)}&start=${start}&end=${end}`);
+            if (!res.ok || !res.data || !res.data.dataPoints) {
+                document.getElementById('mainChart').innerHTML = '<div class="empty-state">暂无数据或查询失败</div>';
+                return;
+            }
+            const points = res.data.dataPoints;
+            updateStats(points);
+            if (!chartInstance) chartInstance = echarts.init(document.getElementById('mainChart'));
+            chartInstance.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        const p = params[0];
+                        return `${new Date(p.value[0]).toLocaleString('zh-CN')}<br/><b>${metric}:</b> ${fmtNumber(p.value[1])}`;
+                    }
+                },
+                grid: { left: 60, right: 40, top: 40, bottom: 60 },
+                xAxis: { type: 'time', boundaryGap: false, axisLabel: { formatter: '{MM}-{dd} {HH}:{mm}' } },
+                yAxis: { type: 'value', scale: true },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }, { type: 'slider', start: 0, end: 100, bottom: 10 }],
+                series: [{
+                    name: metric, type: 'line', smooth: true, symbol: 'circle', symbolSize: 6,
+                    data: points.map(p => [p.timestamp, p.value]),
+                    lineStyle: { width: 2, color: '#1a2980' }, itemStyle: { color: '#1a2980' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(26,41,128,0.3)' }, { offset: 1, color: 'rgba(26,41,128,0.05)' }
+                        ])
+                    }
+                }]
+            }, true);
+        }
+
+        async function drawMultiChart() {
+            const tags = document.querySelectorAll('#chartMultiTags .metric-tag.selected');
+            let metrics = Array.from(tags).map(t => t.textContent);
+            if (metrics.length === 0) {
+                document.getElementById('multiChart').innerHTML = '<div class="empty-state">请至少选择一个指标</div>';
+                return;
+            }
+            const start = fromDatetimeLocal(document.getElementById('multiChartStart').value);
+            const end = fromDatetimeLocal(document.getElementById('multiChartEnd').value);
+            if (!start || !end) return;
+            const colors = ['#1a2980', '#26d0ce', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6'];
+            const res = await request(`/query/multi?measurements=${encodeURIComponent(metrics.join(','))}&start=${start}&end=${end}`);
+            if (!res.ok || !res.data) {
+                document.getElementById('multiChart').innerHTML = '<div class="empty-state">暂无数据或查询失败</div>';
+                return;
+            }
+            const series = [];
+            let colorIdx = 0;
+            for (const [metric, points] of Object.entries(res.data)) {
+                if (!Array.isArray(points)) continue;
+                series.push({
+                    name: metric, type: 'line', smooth: true, symbol: 'none',
+                    data: points.map(p => [p.timestamp, p.value]),
+                    lineStyle: { width: 2 }, itemStyle: { color: colors[colorIdx % colors.length] }
+                });
+                colorIdx++;
+            }
+            if (!multiChartInstance) multiChartInstance = echarts.init(document.getElementById('multiChart'));
+            multiChartInstance.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: metrics, top: 10 },
+                grid: { left: 60, right: 40, top: 60, bottom: 60 },
+                xAxis: { type: 'time', boundaryGap: false, axisLabel: { formatter: '{MM}-{dd} {HH}:{mm}' } },
+                yAxis: { type: 'value', scale: true },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }, { type: 'slider', start: 0, end: 100, bottom: 10 }],
+                series: series
+            }, true);
+        }
+
+        function updateStats(points) {
+            if (!points || points.length === 0) {
+                ['statTotal','statStart','statEnd','statAvg'].forEach(id => document.getElementById(id).textContent = (id==='statTotal'?'0':'-'));
+                return;
+            }
+            const values = points.map(p => parseFloat(p.value)).filter(v => !isNaN(v));
+            const avg = values.length ? values.reduce((a,b) => a+b, 0) / values.length : 0;
+            document.getElementById('statTotal').textContent = points.length;
+            document.getElementById('statStart').textContent = fmtTime(points[0].timestamp);
+            document.getElementById('statEnd').textContent = fmtTime(points[points.length-1].timestamp);
+            document.getElementById('statAvg').textContent = fmtNumber(avg);
+        }
+
+        init();
+    </script>
+</body>
+</html>
