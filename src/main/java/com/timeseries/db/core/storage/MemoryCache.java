@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -24,7 +25,7 @@ public class MemoryCache {
     private Cache<String, List<Point>> cache;
 
     // 记录measurement对应的所有缓存Key，用于批量失效
-    private final ConcurrentHashMap<String, java.util.Set<String>> measurementKeyIndex = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> measurementKeyIndex = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -64,18 +65,27 @@ public class MemoryCache {
      * 按measurement前缀失效缓存（用于写入后刷新）
      */
     public void invalidateByPrefix(String measurement) {
-        java.util.Set<String> keys = measurementKeyIndex.get(measurement);
+        Set<String> keys = measurementKeyIndex.get(measurement);
         if (keys != null) {
             for (String key : keys) {
                 cache.invalidate(key);
             }
             keys.clear();
+            measurementKeyIndex.remove(measurement); // 修复内存泄漏：彻底移除entry
         }
     }
 
     private String extractMeasurement(String key) {
-        // key格式: measurement::tags::field::start::end 或 measurement::field::start::end
+        // key格式: measurement::tags::field::start::end:limit 或 measurement::field::start::end:limit
         int idx = key.indexOf("::");
         return idx > 0 ? key.substring(0, idx) : key;
+    }
+
+    /**
+     * 测试辅助：获取指定 measurement 的索引 key 数量
+     */
+    int getIndexSize(String measurement) {
+        java.util.Set<String> keys = measurementKeyIndex.get(measurement);
+        return keys == null ? 0 : keys.size();
     }
 }

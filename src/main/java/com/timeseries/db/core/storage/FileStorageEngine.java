@@ -8,7 +8,6 @@ import com.timeseries.db.core.model.Query;
 import com.timeseries.db.core.model.TimeRange;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -17,8 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -34,8 +31,10 @@ public class FileStorageEngine {
     @Autowired
     private FileNameGenerator fileNameGenerator;
 
+    @Autowired
+    private BufferedFileWriterPool writerPool;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final Map<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -51,12 +50,11 @@ public class FileStorageEngine {
     }
 
     /**
-     * 写入时序数据（先写文件，再更新缓存）
+     * 写入时序数据（复用Writer，减少文件打开/关闭）
      */
     public void write(Point point) {
         String filePath = fileNameGenerator.generateFilePath(point);
-        appendToFile(filePath, point);
-        // 写入后使相关缓存失效（因为新数据可能影响查询结果）
+        writerPool.getWriter(filePath).writeSync(serializePoint(point));
         invalidateRelatedCache(point.getMeasurement());
     }
 
@@ -73,7 +71,10 @@ public class FileStorageEngine {
 
         // 每组分别写入
         for (Map.Entry<String, List<Point>> entry : fileGroups.entrySet()) {
-            appendPointsToFile(entry.getKey(), entry.getValue());
+            List<String> lines = entry.getValue().stream()
+                    .map(this::serializePoint)
+                    .collect(Collectors.toList());
+            writerPool.getWriter(entry.getKey()).writeBatchSync(lines);
         }
 
         // 批量使缓存失效
@@ -84,73 +85,17 @@ public class FileStorageEngine {
     }
 
     /**
-     * 追加单条数据到文件
-     */
-    private void appendToFile(String filePath, Point point) {
-        ReentrantLock lock = fileLocks.computeIfAbsent(filePath, k -> new ReentrantLock());
-        lock.lock();
-        try {
-            File file = ensureFileExists(filePath);
-            // Java 8 兼容写法：FileOutputStream + OutputStreamWriter
-            try (FileOutputStream fos = new FileOutputStream(file, true);
-                 OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-                 BufferedWriter writer = new BufferedWriter(osw)) {
-                writer.write(serializePoint(point));
-                writer.newLine();
-            }
-        } catch (Exception e) {
-            log.error("写入文件失败: {}", filePath, e);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    /**
-     * 批量追加数据到文件
-     */
-    private void appendPointsToFile(String filePath, List<Point> points) {
-        if (points.isEmpty()) return;
-
-        ReentrantLock lock = fileLocks.computeIfAbsent(filePath, k -> new ReentrantLock());
-        lock.lock();
-        try {
-            File file = ensureFileExists(filePath);
-            try (FileOutputStream fos = new FileOutputStream(file, true);
-                 OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-                 BufferedWriter writer = new BufferedWriter(osw)) {
-                for (Point point : points) {
-                    writer.write(serializePoint(point));
-                    writer.newLine();
-                }
-            }
-        } catch (Exception e) {
-            log.error("批量写入文件失败: {}", filePath, e);
-        } finally {
-            lock.unlock();
-        }
-    }
-    private File ensureFileExists(String filePath) throws IOException {
-        File file = new File(filePath);
-        if (!file.getParentFile().exists()) {
-            file.getParentFile().mkdirs();
-        }
-        if (!file.exists()) {
-            file.createNewFile();
-        }
-        return file;
-    }
-
-    /**
-     * 查询时序数据
+     * 查询时序数据（带limit保护，防止OOM）
      */
     public List<Point> query(Query query) {
         String measurement = query.getMeasurement();
         Map<String, String> tagFilters = query.getTagFilters();
         TimeRange timeRange = query.getTimeRange();
         String field = query.getField();
+        int limit = query.getLimit() != null && query.getLimit() > 0 ? query.getLimit() : Integer.MAX_VALUE;
 
-        // 构建缓存Key（包含field）
-        String cacheKey = buildQueryCacheKey(measurement, tagFilters, field, timeRange);
+        // 构建缓存Key（包含field和limit）
+        String cacheKey = buildQueryCacheKey(measurement, tagFilters, field, timeRange, limit);
 
         // 先查缓存
         List<Point> cached = memoryCache.get(cacheKey);
@@ -181,10 +126,15 @@ public class FileStorageEngine {
                     if (!point.getFields().containsKey(field)) continue;
 
                     result.add(point);
+                    if (result.size() >= limit) {
+                        log.warn("查询结果达到上限 {}，提前终止: measurement={}, field={}", limit, measurement, field);
+                        break;
+                    }
                 }
             } catch (Exception e) {
                 log.error("读取文件失败: {}", filePath, e);
             }
+            if (result.size() >= limit) break;
         }
 
         // 按时间排序
@@ -203,10 +153,10 @@ public class FileStorageEngine {
     }
 
     /**
-     * 构建查询缓存Key（包含field和时间范围）
+     * 构建查询缓存Key（包含field、时间范围和limit）
      */
     private String buildQueryCacheKey(String measurement, Map<String, String> tags,
-                                      String field, TimeRange timeRange) {
+                                      String field, TimeRange timeRange, int limit) {
         String tagStr = "";
         if (tags != null && !tags.isEmpty()) {
             tagStr = "::" + tags.entrySet().stream()
@@ -214,16 +164,19 @@ public class FileStorageEngine {
                     .map(e -> e.getKey() + "=" + e.getValue())
                     .collect(Collectors.joining("::"));
         }
-        return String.format("%s%s::%s::%d::%d",
-                measurement, tagStr, field, timeRange.getStart(), timeRange.getEnd());
+        return String.format("%s%s::%s::%d::%d::%d",
+                measurement, tagStr, field, timeRange.getStart(), timeRange.getEnd(), limit);
     }
 
+    /**
+     * 序列化Point，失败时抛异常（不再写入脏数据空行）
+     */
     private String serializePoint(Point point) {
         try {
             return objectMapper.writeValueAsString(point);
         } catch (Exception e) {
-            log.error("序列化Point失败", e);
-            return "";
+            log.error("序列化Point失败: {}", point, e);
+            throw new RuntimeException("序列化Point失败", e);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.timeseries.db.core.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -18,8 +19,12 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Point implements Serializable {
+    @JsonProperty("m")
     private String measurement;
+    @JsonProperty("t")
     private Map<String, String> tags;
+    @JsonProperty("f")
     private Map<String, Object> fields;
+    @JsonProperty("ts")
     private long timestamp;
 }

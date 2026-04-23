@@ -8,11 +8,12 @@ server:
 spring:
   application:
     name: timeseries-db
-  # 可选：添加日志级别配置（配合logback）
-  logging:
-    level:
-      com.timeseries.db: DEBUG  # 核心包日志级别
-      org.springframework: WARN # 减少Spring冗余日志
+
+# 日志级别配置（修正：应为顶层 logging，不是 spring.logging）
+logging:
+  level:
+    com.timeseries.db: DEBUG  # 核心包日志级别
+    org.springframework: WARN # 减少Spring冗余日志
 
 # 时序库自定义存储配置（原有配置保留）
 timeseries:

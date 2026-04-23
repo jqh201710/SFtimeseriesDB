@@ -7,10 +7,10 @@ import com.timeseries.db.core.model.TimeRange;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 
 @Component
@@ -21,16 +21,16 @@ public class FileNameGenerator {
 
     private static final String HOUR_FORMAT = "yyyyMMddHH";
     private static final String DAY_FORMAT = "yyyyMMdd";
-    private static final SimpleDateFormat HOUR_SDF = new SimpleDateFormat(HOUR_FORMAT);
-    private static final SimpleDateFormat DAY_SDF = new SimpleDateFormat(DAY_FORMAT);
+    private static final DateTimeFormatter HOUR_DTF = DateTimeFormatter.ofPattern(HOUR_FORMAT).withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter DAY_DTF = DateTimeFormatter.ofPattern(DAY_FORMAT).withZone(ZoneId.systemDefault());
 
     /**
      * 生成单个Point对应的文件路径
      */
     public String generateFilePath(Point point) {
-        String timeFormat = "HOUR".equals(config.getShardType()) ? HOUR_FORMAT : DAY_FORMAT;
-        SimpleDateFormat sdf = "HOUR".equals(config.getShardType()) ? HOUR_SDF : DAY_SDF;
-        String timeStr = sdf.format(new Date(point.getTimestamp()));
+        String timeStr = "HOUR".equals(config.getShardType())
+                ? HOUR_DTF.format(Instant.ofEpochMilli(point.getTimestamp()))
+                : DAY_DTF.format(Instant.ofEpochMilli(point.getTimestamp()));
         // 路径格式：basePath/measurement/20240124/2024012401.json
         return String.format("%s/%s/%s/%s.json",
                 config.getBasePath(),
@@ -44,17 +44,14 @@ public class FileNameGenerator {
      */
     public List<String> listFiles(String measurement, TimeRange timeRange) {
         List<String> filePaths = new ArrayList<>();
-        Calendar cal = Calendar.getInstance();
-        cal.setTime(new Date(timeRange.getStart()));
-
-        Calendar endCal = Calendar.getInstance();
-        endCal.setTime(new Date(timeRange.getEnd()));
+        long current = truncateToShardBoundary(timeRange.getStart());
+        long end = truncateToShardBoundary(timeRange.getEnd());
 
         // 按分片类型遍历时间范围，生成所有可能的文件路径
-        while (cal.before(endCal) || cal.equals(endCal)) {
-            String timeFormat = "HOUR".equals(config.getShardType()) ? HOUR_FORMAT : DAY_FORMAT;
-            SimpleDateFormat sdf = "HOUR".equals(config.getShardType()) ? HOUR_SDF : DAY_SDF;
-            String timeStr = sdf.format(cal.getTime());
+        while (current <= end) {
+            String timeStr = "HOUR".equals(config.getShardType())
+                    ? HOUR_DTF.format(Instant.ofEpochMilli(current))
+                    : DAY_DTF.format(Instant.ofEpochMilli(current));
             String filePath = String.format("%s/%s/%s/%s.json",
                     config.getBasePath(),
                     measurement,
@@ -64,11 +61,24 @@ public class FileNameGenerator {
 
             // 按小时/天递增
             if ("HOUR".equals(config.getShardType())) {
-                cal.add(Calendar.HOUR, 1);
+                current += 3600_000L; // +1 hour in millis
             } else {
-                cal.add(Calendar.DAY_OF_MONTH, 1);
+                current += 86_400_000L; // +1 day in millis
             }
         }
         return filePaths;
+    }
+
+    /**
+     * 将时间戳截断到当前分片类型的起始边界（整小时或整天）
+     */
+    private long truncateToShardBoundary(long timestamp) {
+        if ("HOUR".equals(config.getShardType())) {
+            return (timestamp / 3600_000L) * 3600_000L;
+        } else {
+            // 获取当前时区当天的开始时间戳
+            java.time.LocalDate date = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate();
+            return date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        }
     }
 }

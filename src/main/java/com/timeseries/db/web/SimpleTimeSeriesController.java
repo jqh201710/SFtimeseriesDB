@@ -128,7 +128,7 @@ public class SimpleTimeSeriesController {
      * GET http://localhost:8080/api/simple/query/multi?measurements=cpu_usage,memory_usage&start=1737724800000&end=1737728400000
      */
     @GetMapping("/query/multi")
-    public Map<String, List<SimpleQueryResponse.SimpleDataPoint>> queryMultiMetric(
+    public MultiMetricQueryResponse queryMultiMetric(
             @RequestParam String measurements, // 多个指标名，用逗号分隔（如cpu_usage,memory_usage）
             @RequestParam long start,          // 开始时间戳（毫秒）
             @RequestParam long end) {          // 结束时间戳（毫秒）
@@ -161,9 +161,9 @@ public class SimpleTimeSeriesController {
             metricDataMap.put(measurement.trim(), dataPoints);
         }
 
-        // 4. 封装响应
-//        MultiMetricQueryResponse response = new MultiMetricQueryResponse();
-//        response.setMetricData(metricDataMap);
-        return metricDataMap;
+        // 4. 封装响应（修复：使用包装对象，与客户端契约一致）
+        MultiMetricQueryResponse response = new MultiMetricQueryResponse();
+        response.setMetricData(metricDataMap);
+        return response;
     }
 }
