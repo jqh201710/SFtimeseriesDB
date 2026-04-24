@@ -56,4 +56,10 @@ public interface TimeSeriesService {
                                     String field,
                                     long targetTime,
                                     long timeTolerance);
+
+    /**
+     * 列出所有已存在的 measurement
+     * @return 按字母序排列的指标名列表
+     */
+    List<String> listMeasurements();
 }

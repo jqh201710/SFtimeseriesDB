@@ -106,6 +106,11 @@ public class TimeSeriesServiceImpl implements TimeSeriesService {
     }
 
     @Override
+    public List<String> listMeasurements() {
+        return fileStorageEngine.listMeasurements();
+    }
+
+    @Override
     public SamplingData queryByPointInTime(String measurement,
                                            Map<String, String> tagFilters,
                                            String field,

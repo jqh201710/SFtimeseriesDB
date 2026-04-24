@@ -189,6 +189,22 @@ public class FileStorageEngine {
         }
     }
 
+    /**
+     * 列出所有已存在的 measurement（扫描存储目录）
+     */
+    public List<String> listMeasurements() {
+        File baseDir = new File(config.getBasePath());
+        if (!baseDir.exists() || !baseDir.isDirectory()) {
+            return Collections.emptyList();
+        }
+        File[] dirs = baseDir.listFiles(File::isDirectory);
+        if (dirs == null) return Collections.emptyList();
+        return Arrays.stream(dirs)
+                .map(File::getName)
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
     private boolean matchTags(Map<String, String> pointTags, Map<String, String> filterTags) {
         if (filterTags == null || filterTags.isEmpty()) return true;
         if (pointTags == null) return false;

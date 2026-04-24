@@ -25,6 +25,8 @@
             top: 0; left: 0; right: 0;
             z-index: 1000;
         }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-logo { height: 36px; width: auto; }
         .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
         .header-right {
             display: flex;
@@ -357,7 +359,10 @@
 </head>
 <body>
     <div class="header">
-        <h1>📊 时序数据库监控仪表盘</h1>
+        <div class="header-left">
+            <img src="./images/sifang_logo.png" alt="logo" class="header-logo">
+            <h1>时序数据库监控仪表盘</h1>
+        </div>
         <div class="header-right">
             <input type="text" id="baseUrl" value="http://localhost:11002/api/timeseries" placeholder="API基础地址">
             <button onclick="testConnection()">测试连接</button>
@@ -371,10 +376,8 @@
             <div class="sidebar-search">
                 <input type="text" id="metricSearch" placeholder="搜索指标 (measurement)..." oninput="filterMetrics()">
             </div>
-            <div class="sidebar-section-title">系统指标</div>
-            <div class="metric-list" id="systemMetrics"></div>
-            <div class="sidebar-section-title">设备指标</div>
-            <div class="metric-list" id="deviceMetrics"></div>
+            <div class="sidebar-section-title">全部指标 (<span id="metricTotalCount">0</span>)</div>
+            <div class="metric-list" id="allMetrics"></div>
         </div>
 
         <!-- 右侧内容 -->
@@ -589,29 +592,15 @@
         let chartInstance = null;
         let multiChartInstance = null;
 
-        const SYSTEM_METRICS = ['cpu_usage','memory_usage','disk_usage','cpu','concurrent_test_metric'];
-        const DEVICE_METRICS = [
-            'PC1YC100','PC1YC103','PC1YC104','PC1YC105','PC1YC106','PC1YC107','PC1YC108','PC1YC109','PC1YC110','PC1YC111','PC1YC112',
-            'PC1YC123','PC1YC124','PC1YC127','PC1YC128','PC1YC131','PC1YC132','PC1YC133','PC1YC134','PC1YC135','PC1YC136','PC1YC137','PC1YC138','PC1YC139','PC1YC140',
-            'PC1YC151','PC1YC152','PC1YC156','PC1YC159','PC1YC160','PC1YC161','PC1YC162','PC1YC163','PC1YC164','PC1YC165','PC1YC166','PC1YC167','PC1YC168',
-            'PC1YC179','PC1YC180','PC1YC183','PC1YC184','PC1YC187','PC1YC188','PC1YC189','PC1YC19','PC1YC190','PC1YC191','PC1YC192','PC1YC193','PC1YC194','PC1YC195','PC1YC196',
-            'PC1YC20','PC1YC207','PC1YC208','PC1YC21','PC1YC211','PC1YC212','PC1YC215','PC1YC216','PC1YC217','PC1YC218','PC1YC219','PC1YC22','PC1YC220','PC1YC221','PC1YC222','PC1YC223','PC1YC224','PC1YC23',
-            'PC1YC235','PC1YC236','PC1YC239','PC1YC24','PC1YC240','PC1YC243','PC1YC244','PC1YC245','PC1YC246','PC1YC247','PC1YC248','PC1YC249','PC1YC25','PC1YC250','PC1YC251','PC1YC252','PC1YC26',
-            'PC1YC263','PC1YC264','PC1YC267','PC1YC268','PC1YC27','PC1YC271','PC1YC272','PC1YC273','PC1YC274','PC1YC275','PC1YC276','PC1YC277','PC1YC278','PC1YC279','PC1YC28','PC1YC280',
-            'PC1YC291','PC1YC292','PC1YC295','PC1YC296','PC1YC299','PC1YC300','PC1YC301','PC1YC302','PC1YC303','PC1YC304','PC1YC305','PC1YC306','PC1YC307','PC1YC308',
-            'PC1YC319','PC1YC320','PC1YC323','PC1YC324','PC1YC327','PC1YC328','PC1YC329','PC1YC330','PC1YC331','PC1YC332','PC1YC333','PC1YC334','PC1YC335','PC1YC336',
-            'PC1YC347','PC1YC348','PC1YC351','PC1YC352','PC1YC355','PC1YC356','PC1YC357','PC1YC358','PC1YC359','PC1YC360','PC1YC361','PC1YC362','PC1YC363','PC1YC364',
-            'PC1YC375','PC1YC376','PC1YC379','PC1YC380','PC1YC383','PC1YC384','PC1YC385','PC1YC386','PC1YC387','PC1YC388','PC1YC389','PC1YC39','PC1YC390','PC1YC391','PC1YC392','PC1YC40',
-            'PC1YC403','PC1YC404','PC1YC405','PC1YC406','PC1YC407','PC1YC408','PC1YC411','PC1YC412','PC1YC413','PC1YC414','PC1YC415','PC1YC416','PC1YC417','PC1YC418','PC1YC419','PC1YC420',
-            'PC1YC43','PC1YC431','PC1YC432','PC1YC435','PC1YC436','PC1YC439','PC1YC44','PC1YC47','PC1YC48','PC1YC49','PC1YC50','PC1YC51','PC1YC52','PC1YC53','PC1YC54','PC1YC55','PC1YC56',
-            'PC1YC67','PC1YC68','PC1YC71','PC1YC72','PC1YC75','PC1YC76','PC1YC77','PC1YC78','PC1YC79','PC1YC80','PC1YC81','PC1YC82','PC1YC83','PC1YC84','PC1YC95','PC1YC96','PC1YC99','PC2YC66'
-        ];
-        allMetrics = [...SYSTEM_METRICS, ...DEVICE_METRICS];
+        // 指标列表改为从后端动态获取，支持任意数量（10000+ 也能正常处理）
+        allMetrics = [];
 
-        function init() {
+        async function init() {
+            await loadMetrics();
             renderMetricList();
             renderMetricTags();
             renderChartOptions();
+            renderDatalist();
             setChartRange(86400000);
             setMultiChartRange(86400000);
             testConnection();
@@ -621,15 +610,32 @@
             });
         }
 
-        function renderMetricList() {
-            document.getElementById('systemMetrics').innerHTML = SYSTEM_METRICS.map(m => createMetricItem(m, '系统')).join('');
-            document.getElementById('deviceMetrics').innerHTML = DEVICE_METRICS.map(m => createMetricItem(m, '设备')).join('');
+        async function loadMetrics() {
+            try {
+                const res = await fetch(API_BASE() + '/measurements');
+                if (res.ok) {
+                    allMetrics = await res.json();
+                } else {
+                    console.warn('获取指标列表失败，使用空列表');
+                    allMetrics = [];
+                }
+            } catch (e) {
+                console.warn('获取指标列表异常:', e);
+                allMetrics = [];
+            }
         }
 
-        function createMetricItem(name, tag) {
+        function renderMetricList() {
+            const container = document.getElementById('allMetrics');
+            // 性能保护：默认只渲染前 200 个，避免 10000+ 指标导致 DOM 卡顿
+            const displayMetrics = allMetrics.slice(0, 200);
+            container.innerHTML = displayMetrics.map(m => createMetricItem(m)).join('');
+            document.getElementById('metricTotalCount').textContent = allMetrics.length;
+        }
+
+        function createMetricItem(name) {
             return `<div class="metric-item" onclick="selectMetric('${name}')" data-name="${name}">
                 <span>${name}</span>
-                <span class="tag">${tag}</span>
             </div>`;
         }
 
@@ -646,18 +652,35 @@
         }
 
         function filterMetrics() {
-            const keyword = document.getElementById('metricSearch').value.toLowerCase();
-            document.querySelectorAll('.metric-item').forEach(el => {
-                el.style.display = el.getAttribute('data-name').toLowerCase().includes(keyword) ? 'flex' : 'none';
-            });
+            const keyword = document.getElementById('metricSearch').value.toLowerCase().trim();
+            const container = document.getElementById('allMetrics');
+            if (!keyword) {
+                // 无关键词时恢复默认前 200 个
+                container.innerHTML = allMetrics.slice(0, 200).map(m => createMetricItem(m)).join('');
+            } else {
+                // 从全量数组过滤，最多渲染 200 个匹配项（支持 10000+ 指标搜索）
+                const matched = allMetrics.filter(m => m.toLowerCase().includes(keyword));
+                const html = matched.slice(0, 200).map(m => createMetricItem(m)).join('');
+                const moreHint = matched.length > 200
+                    ? `<div style="padding:8px 12px;color:#999;font-size:12px;text-align:center;">还有 ${matched.length - 200} 个匹配结果，请缩小搜索范围</div>`
+                    : '';
+                container.innerHTML = html + moreHint;
+            }
         }
 
         function renderMetricTags() {
-            const tags = SYSTEM_METRICS.slice(0, 6).map(m =>
+            // 从已有指标中取前 8 个作为快捷标签（若不足 8 个则取全部）
+            const tags = allMetrics.slice(0, 8).map(m =>
                 `<span class="metric-tag" onclick="toggleMetricTag(this, '${m}')">${m}</span>`
             ).join('');
             document.getElementById('multiMetricTags').innerHTML = tags;
             document.getElementById('chartMultiTags').innerHTML = tags;
+        }
+
+        function renderDatalist() {
+            // datalist 用于输入框的下拉提示，最多放 100 个（浏览器对超长 datalist 可能卡顿）
+            const options = allMetrics.slice(0, 100).map(m => `<option value="${m}">`).join('');
+            document.getElementById('metricDatalist').innerHTML = options;
         }
 
         function toggleMetricTag(el, name) {

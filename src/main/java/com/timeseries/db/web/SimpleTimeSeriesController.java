@@ -122,6 +122,15 @@ public class SimpleTimeSeriesController {
         return response;
     }
 
+    /**
+     * 获取所有已存在的指标列表（动态扫描存储目录）
+     * GET http://localhost:8080/api/timeseries/measurements
+     */
+    @GetMapping("/measurements")
+    public List<String> listMeasurements() {
+        return timeSeriesService.listMeasurements();
+    }
+
     // ========== 新增：多组数据（多指标）查询接口 ==========
     /**
      * 极简多指标查询：一次性查多个measurement的时间范围数据
